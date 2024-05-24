@@ -50,7 +50,7 @@ use windows::Win32::UI::WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME;
 use crate::error::SysError;
 
 #[derive(Debug)]
-pub struct Device {
+pub struct PhysicalDevice {
     // new stuff
     pub hmonitor: isize,
     pub size: RECT,
@@ -69,7 +69,26 @@ pub struct Device {
     pub output_technology: DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY,
 }
 
-impl Device {
+#[derive(Debug)]
+pub struct Device {
+    // new stuff
+    pub hmonitor: isize,
+    pub size: RECT,
+    pub work_area_size: RECT,
+    // old stuff
+    pub device_name: String,
+    /// Note: PHYSICAL_MONITOR.szPhysicalMonitorDescription == DISPLAY_DEVICEW.DeviceString
+    /// Description is **not** unique.
+    pub device_description: String,
+    pub device_key: String,
+    /// Note: DISPLAYCONFIG_TARGET_DEVICE_NAME.monitorDevicePath == DISPLAY_DEVICEW.DeviceID (with EDD_GET_DEVICE_INTERFACE_NAME)\
+    /// These are in the "DOS Device Path" format.
+    pub device_path: String,
+    pub output_technology: DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY,
+}
+
+
+impl PhysicalDevice {
     pub fn is_internal(&self) -> bool {
         self.output_technology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL
     }
@@ -114,7 +133,51 @@ fn flag_set<T: std::ops::BitAnd<Output = T> + PartialEq + Copy>(t: T, flag: T) -
     t & flag == flag
 }
 
-pub fn connected_displays() -> impl Iterator<Item = Result<Device, SysError>> {
+pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>> {
+    unsafe {
+        let device_info_map = match get_device_info_map() {
+            Ok(info) => info,
+            Err(e) => return Either::Right(once(Err(e))),
+        };
+
+        let hmonitors = match enum_display_monitors() {
+            Ok(monitors) => monitors,
+            Err(e) => return Either::Right(once(Err(e))),
+        };
+
+        Either::Left(hmonitors.into_iter().flat_map(move |hmonitor| {
+            let display_devices = match get_display_devices_from_hmonitor(hmonitor) {
+                Ok(p) => p,
+                Err(e) => return vec![Err(e)],
+            };
+
+            display_devices
+                .into_iter()
+                .map(
+                    |(monitor_info, display_device)| {
+                        let info = device_info_map
+                            .get(&display_device.DeviceID)
+                            .ok_or(SysError::DeviceInfoMissing)?;
+
+                        Ok(Device {
+                            hmonitor: hmonitor.0,
+                            size: monitor_info.monitorInfo.rcMonitor,
+                            work_area_size: monitor_info.monitorInfo.rcWork,
+                            device_name: wchar_to_string(&display_device.DeviceName),
+                            device_description: wchar_to_string(&display_device.DeviceString),
+                            device_key: wchar_to_string(&display_device.DeviceKey),
+                            device_path: wchar_to_string(&display_device.DeviceID),
+                            output_technology: info.outputTechnology,
+                        })
+                    },
+                )
+                .collect()
+        }))
+    }
+}
+
+
+pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevice, SysError>> {
     unsafe {
         let device_info_map = match get_device_info_map() {
             Ok(info) => info,
@@ -157,7 +220,7 @@ pub fn connected_displays() -> impl Iterator<Item = Result<Device, SysError>> {
                         let info = device_info_map
                             .get(&display_device.DeviceID)
                             .ok_or(SysError::DeviceInfoMissing)?;
-                        Ok(Device {
+                        Ok(PhysicalDevice {
                             hmonitor: hmonitor.0,
                             size: monitor_info.monitorInfo.rcMonitor,
                             work_area_size: monitor_info.monitorInfo.rcWork,

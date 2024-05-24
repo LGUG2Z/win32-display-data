@@ -6,6 +6,10 @@
 mod device;
 pub mod error;
 
-pub fn connected_displays() -> impl Iterator<Item = Result<device::Device, error::Error>> {
-    device::connected_displays().map(|r| r.map_err(Into::into))
+pub fn connected_displays_physical() -> impl Iterator<Item = Result<device::PhysicalDevice, error::Error>> {
+    device::connected_displays_physical().map(|r| r.map_err(Into::into))
+}
+
+pub fn connected_displays_all() -> impl Iterator<Item = Result<device::Device, error::Error>> {
+    device::connected_displays_all().map(|r| r.map_err(Into::into))
 }
