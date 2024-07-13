@@ -84,9 +84,8 @@ pub struct Device {
     /// Note: DISPLAYCONFIG_TARGET_DEVICE_NAME.monitorDevicePath == DISPLAY_DEVICEW.DeviceID (with EDD_GET_DEVICE_INTERFACE_NAME)\
     /// These are in the "DOS Device Path" format.
     pub device_path: String,
-    pub output_technology: DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY,
+    pub output_technology: Option<DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY>,
 }
-
 
 impl PhysicalDevice {
     pub fn is_internal(&self) -> bool {
@@ -135,47 +134,56 @@ fn flag_set<T: std::ops::BitAnd<Output = T> + PartialEq + Copy>(t: T, flag: T) -
 
 pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>> {
     unsafe {
-        let device_info_map = match get_device_info_map() {
-            Ok(info) => info,
-            Err(e) => return Either::Right(once(Err(e))),
-        };
+        let device_info_map = get_device_info_map().unwrap_or_else(|_| HashMap::new());
 
         let hmonitors = match enum_display_monitors() {
             Ok(monitors) => monitors,
             Err(e) => return Either::Right(once(Err(e))),
         };
 
-        Either::Left(hmonitors.into_iter().flat_map(move |hmonitor| {
-            let display_devices = match get_display_devices_from_hmonitor(hmonitor) {
-                Ok(p) => p,
-                Err(e) => return vec![Err(e)],
-            };
-
-            display_devices
+        Either::Left(
+            hmonitors
                 .into_iter()
-                .map(
-                    |(monitor_info, display_device)| {
-                        let info = device_info_map
-                            .get(&display_device.DeviceID)
-                            .ok_or(SysError::DeviceInfoMissing)?;
+                .enumerate()
+                .flat_map(move |(idx, hmonitor)| {
+                    let mut display_devices =
+                        match get_display_devices_from_hmonitor(hmonitor) {
+                            Ok(p) => p,
+                            Err(e) => return vec![Err(e)],
+                        };
 
-                        Ok(Device {
-                            hmonitor: hmonitor.0,
-                            size: monitor_info.monitorInfo.rcMonitor,
-                            work_area_size: monitor_info.monitorInfo.rcWork,
-                            device_name: wchar_to_string(&display_device.DeviceName),
-                            device_description: wchar_to_string(&display_device.DeviceString),
-                            device_key: wchar_to_string(&display_device.DeviceKey),
-                            device_path: wchar_to_string(&display_device.DeviceID),
-                            output_technology: info.outputTechnology,
+                    if display_devices.is_empty() {
+                        display_devices = match get_display_devices_from_hmonitor_lenient(idx, hmonitor) {
+                            Ok(p) => p,
+                            Err(e) => return vec![Err(e)],
+                        };
+
+                    }
+
+                    display_devices
+                        .into_iter()
+                        .map(|(monitor_info, display_device)| {
+                            let output_technology = device_info_map
+                                .get(&display_device.DeviceID)
+                                .map(|d| Some(d.outputTechnology))
+                                .unwrap_or(None);
+
+                            Ok(Device {
+                                hmonitor: hmonitor.0,
+                                size: monitor_info.monitorInfo.rcMonitor,
+                                work_area_size: monitor_info.monitorInfo.rcWork,
+                                device_name: wchar_to_string(&display_device.DeviceName),
+                                device_description: wchar_to_string(&display_device.DeviceString),
+                                device_key: wchar_to_string(&display_device.DeviceKey),
+                                device_path: wchar_to_string(&display_device.DeviceID),
+                                output_technology,
+                            })
                         })
-                    },
-                )
-                .collect()
-        }))
+                        .collect()
+                }),
+        )
     }
 }
-
 
 pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevice, SysError>> {
     unsafe {
@@ -194,10 +202,12 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                 Ok(p) => p,
                 Err(e) => return vec![Err(e)],
             };
+
             let display_devices = match get_display_devices_from_hmonitor(hmonitor) {
                 Ok(p) => p,
                 Err(e) => return vec![Err(e)],
             };
+
             if display_devices.len() != physical_monitors.len() {
                 // There doesn't seem to be any way to directly associate a physical monitor
                 // handle with the equivalent display device, other than by array indexing
@@ -363,6 +373,51 @@ unsafe fn get_display_devices_from_hmonitor(
         .filter(|device| flag_set(device.StateFlags, DISPLAY_DEVICE_ACTIVE))
         .map(|device| (info, device))
         .collect())
+}
+
+/// A lenient version of get_display_devices_from_hmonitor which provides
+/// more fault-tolerance for virtualized monitors
+unsafe fn get_display_devices_from_hmonitor_lenient(
+    idx: usize,
+    hmonitor: HMONITOR,
+) -> Result<Vec<(MONITORINFOEXW, DISPLAY_DEVICEW)>, SysError> {
+    let mut info = MONITORINFOEXW::default();
+    info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
+    let info_ptr = &mut info as *mut _ as *mut MONITORINFO;
+
+    GetMonitorInfoW(hmonitor, info_ptr)
+        .ok()
+        .map_err(SysError::GetMonitorInfoFailed)?;
+
+    let mut device = DISPLAY_DEVICEW {
+        cb: size_of::<DISPLAY_DEVICEW>() as u32,
+        ..Default::default()
+    };
+
+    let mut device_with_id = DISPLAY_DEVICEW {
+        cb: size_of::<DISPLAY_DEVICEW>() as u32,
+        ..Default::default()
+    };
+
+    if EnumDisplayDevicesW(
+        PCWSTR::null(),
+        idx as u32,
+        &mut device,
+        EDD_GET_DEVICE_INTERFACE_NAME,
+    )
+    .as_bool()
+    {
+        EnumDisplayDevicesW(
+            PCWSTR(device.DeviceName.as_ptr()),
+            0,
+            &mut device_with_id,
+            EDD_GET_DEVICE_INTERFACE_NAME,
+        );
+    }
+
+    device.DeviceID = device_with_id.DeviceID;
+
+    Ok(vec![(info, device)])
 }
 
 /// Opens and returns a file handle for a display device using its DOS device path.\
