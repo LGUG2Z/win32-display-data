@@ -407,7 +407,7 @@ unsafe fn get_display_devices_from_hmonitor_lenient(
     )
     .as_bool()
     {
-        EnumDisplayDevicesW(
+        let _ = EnumDisplayDevicesW(
             PCWSTR(device.DeviceName.as_ptr()),
             0,
             &mut device_with_id,

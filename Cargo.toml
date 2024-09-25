@@ -11,7 +11,7 @@ itertools = "0.12"
 
 [dependencies.windows]
 # this will be kept in sync with the version used in komorebi
-version = "0.54"
+version = "0.57"
 features = [
     "Win32_Foundation",
     "Win32_Devices_Display",
