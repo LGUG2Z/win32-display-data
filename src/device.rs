@@ -98,7 +98,7 @@ pub struct WrappedPhysicalMonitor(HANDLE);
 
 impl std::fmt::Debug for WrappedPhysicalMonitor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0 .0)
+        write!(f, "{}", self.0 .0 as isize)
     }
 }
 
@@ -115,7 +115,7 @@ pub struct WrappedFileHandle(HANDLE);
 
 impl std::fmt::Debug for WrappedFileHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0 .0)
+        write!(f, "{}", self.0 .0 as isize)
     }
 }
 
@@ -169,7 +169,7 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                                 .unwrap_or(None);
 
                             Ok(Device {
-                                hmonitor: hmonitor.0,
+                                hmonitor: hmonitor.0 as isize,
                                 size: monitor_info.monitorInfo.rcMonitor,
                                 work_area_size: monitor_info.monitorInfo.rcWork,
                                 device_name: wchar_to_string(&display_device.DeviceName),
@@ -231,7 +231,7 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                             .get(&display_device.DeviceID)
                             .ok_or(SysError::DeviceInfoMissing)?;
                         Ok(PhysicalDevice {
-                            hmonitor: hmonitor.0,
+                            hmonitor: hmonitor.0 as isize,
                             size: monitor_info.monitorInfo.rcMonitor,
                             work_area_size: monitor_info.monitorInfo.rcWork,
                             physical_monitor,
