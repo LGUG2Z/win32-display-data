@@ -230,6 +230,21 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                         let info = device_info_map
                             .get(&display_device.DeviceID)
                             .ok_or(SysError::DeviceInfoMissing)?;
+
+                        dbg!(wchar_to_string(&display_device.DeviceID));
+                        dbg!(wchar_to_string(&display_device.DeviceName));
+                        dbg!(wchar_to_string(&display_device.DeviceKey));
+                        dbg!(wchar_to_string(&display_device.DeviceString));
+                        dbg!(wchar_to_string(&info.monitorDevicePath));
+                        dbg!(wchar_to_string(&info.monitorFriendlyDeviceName));
+                        dbg!(info.header.id);
+                        dbg!(info.header.size);
+                        dbg!(info.header.adapterId.HighPart);
+                        dbg!(info.header.adapterId.LowPart);
+                        dbg!(info.header.r#type.0);
+                        dbg!(info.edidManufactureId);
+                        dbg!(info.edidProductCodeId);
+                        dbg!(info.connectorInstance);
                         Ok(PhysicalDevice {
                             hmonitor: hmonitor.0 as isize,
                             size: monitor_info.monitorInfo.rcMonitor,
