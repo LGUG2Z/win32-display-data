@@ -5,7 +5,9 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStringExt;
 use std::ptr;
 
+use crate::error::SysError;
 use itertools::Either;
+use serde::Deserialize;
 use windows::core::PCWSTR;
 use windows::Win32::Devices::Display::DestroyPhysicalMonitor;
 use windows::Win32::Devices::Display::DisplayConfigGetDeviceInfo;
@@ -46,8 +48,17 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
 use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
 use windows::Win32::UI::WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME;
+use wmi::COMLibrary;
+use wmi::WMIConnection;
 
-use crate::error::SysError;
+thread_local! {
+    static COM_LIB: COMLibrary = COMLibrary::new().unwrap();
+}
+
+pub fn wmi_con() -> WMIConnection {
+    let com_lib = COM_LIB.with(|com| *com);
+    WMIConnection::with_namespace_path("root\\wmi", com_lib).unwrap()
+}
 
 #[derive(Debug)]
 pub struct PhysicalDevice {
@@ -67,6 +78,45 @@ pub struct PhysicalDevice {
     /// These are in the "DOS Device Path" format.
     pub device_path: String,
     pub output_technology: DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY,
+    pub serial_number_id: Option<String>,
+}
+
+impl PhysicalDevice {
+    fn wmi_instance_name(&self) -> String {
+        let mut split: Vec<_> = self.device_path.split('#').collect();
+        split.remove(0);
+        split.remove(split.len() - 1);
+        let device_id = split.join("\\\\");
+        format!("DISPLAY\\\\{device_id}")
+    }
+
+    fn try_with_serial_number_id(&mut self) {
+        let wmi_con = wmi_con();
+        let query = format!(
+            "SELECT * FROM WmiMonitorID WHERE InstanceName LIKE '{}%'",
+            self.wmi_instance_name()
+        );
+
+        if let Ok(results) = wmi_con.raw_query::<WmiMonitorID>(query) {
+            if let Some(first) = results.first() {
+                let serial = first
+                    .serial_number_id
+                    .iter()
+                    .map(|&x| char::from_u32(x as u32).unwrap_or('?'))
+                    .collect::<String>()
+                    .trim_end_matches('\0')
+                    .to_string();
+
+                self.serial_number_id = Some(serial);
+            }
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+struct WmiMonitorID {
+    #[serde(rename = "SerialNumberID")]
+    serial_number_id: Vec<u16>,
 }
 
 #[derive(Debug)]
@@ -85,6 +135,39 @@ pub struct Device {
     /// These are in the "DOS Device Path" format.
     pub device_path: String,
     pub output_technology: Option<DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY>,
+    pub serial_number_id: Option<String>,
+}
+
+impl Device {
+    fn wmi_instance_name(&self) -> String {
+        let mut split: Vec<_> = self.device_path.split('#').collect();
+        split.remove(0);
+        split.remove(split.len() - 1);
+        let device_id = split.join("\\\\");
+        format!("DISPLAY\\\\{device_id}")
+    }
+
+    fn try_with_serial_number_id(&mut self) {
+        let wmi_con = wmi_con();
+        let query = format!(
+            "SELECT * FROM WmiMonitorID WHERE InstanceName LIKE '{}%'",
+            self.wmi_instance_name()
+        );
+
+        if let Ok(results) = wmi_con.raw_query::<WmiMonitorID>(query) {
+            if let Some(first) = results.first() {
+                let serial = first
+                    .serial_number_id
+                    .iter()
+                    .map(|&x| char::from_u32(x as u32).unwrap_or('?'))
+                    .collect::<String>()
+                    .trim_end_matches('\0')
+                    .to_string();
+
+                self.serial_number_id = Some(serial);
+            }
+        }
+    }
 }
 
 impl PhysicalDevice {
@@ -146,18 +229,17 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                 .into_iter()
                 .enumerate()
                 .flat_map(move |(idx, hmonitor)| {
-                    let mut display_devices =
-                        match get_display_devices_from_hmonitor(hmonitor) {
-                            Ok(p) => p,
-                            Err(e) => return vec![Err(e)],
-                        };
+                    let mut display_devices = match get_display_devices_from_hmonitor(hmonitor) {
+                        Ok(p) => p,
+                        Err(e) => return vec![Err(e)],
+                    };
 
                     if display_devices.is_empty() {
-                        display_devices = match get_display_devices_from_hmonitor_lenient(idx, hmonitor) {
-                            Ok(p) => p,
-                            Err(e) => return vec![Err(e)],
-                        };
-
+                        display_devices =
+                            match get_display_devices_from_hmonitor_lenient(idx, hmonitor) {
+                                Ok(p) => p,
+                                Err(e) => return vec![Err(e)],
+                            };
                     }
 
                     display_devices
@@ -168,7 +250,7 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                                 .map(|d| Some(d.outputTechnology))
                                 .unwrap_or(None);
 
-                            Ok(Device {
+                            let mut device = Device {
                                 hmonitor: hmonitor.0 as isize,
                                 size: monitor_info.monitorInfo.rcMonitor,
                                 work_area_size: monitor_info.monitorInfo.rcWork,
@@ -177,7 +259,11 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                                 device_key: wchar_to_string(&display_device.DeviceKey),
                                 device_path: wchar_to_string(&display_device.DeviceID),
                                 output_technology,
-                            })
+                                serial_number_id: None,
+                            };
+
+                            device.try_with_serial_number_id();
+                            Ok(device)
                         })
                         .collect()
                 }),
@@ -230,7 +316,8 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                         let info = device_info_map
                             .get(&display_device.DeviceID)
                             .ok_or(SysError::DeviceInfoMissing)?;
-                        Ok(PhysicalDevice {
+
+                        let mut device = PhysicalDevice {
                             hmonitor: hmonitor.0 as isize,
                             size: monitor_info.monitorInfo.rcMonitor,
                             work_area_size: monitor_info.monitorInfo.rcWork,
@@ -241,7 +328,10 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                             device_key: wchar_to_string(&display_device.DeviceKey),
                             device_path: wchar_to_string(&display_device.DeviceID),
                             output_technology: info.outputTechnology,
-                        })
+                            serial_number_id: None,
+                        };
+                        device.try_with_serial_number_id();
+                        Ok(device)
                     },
                 )
                 .collect()

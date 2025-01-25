@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 thiserror = "1"
 itertools = "0.12"
+wmi = "0.14"
+serde = { version = "1.0.217", features = ["derive"] }
 
 [dependencies.windows]
 # this will be kept in sync with the version used in komorebi
