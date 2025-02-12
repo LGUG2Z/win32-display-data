@@ -262,8 +262,12 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                                 serial_number_id: None,
                             };
 
-                            device.try_with_serial_number_id();
-                            Ok(device)
+                            if !device.device_path.trim().is_empty() {
+                                device.try_with_serial_number_id();
+                                Ok(device)
+                            } else {
+                                Err(SysError::DeviceInfoMissing)
+                            }
                         })
                         .collect()
                 }),
@@ -330,8 +334,13 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                             output_technology: info.outputTechnology,
                             serial_number_id: None,
                         };
-                        device.try_with_serial_number_id();
-                        Ok(device)
+
+                        if !device.device_path.trim().is_empty() {
+                            device.try_with_serial_number_id();
+                            Ok(device)
+                        } else {
+                            Err(SysError::DeviceInfoMissing)
+                        }
                     },
                 )
                 .collect()
