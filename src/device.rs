@@ -409,7 +409,7 @@ unsafe fn enum_display_monitors() -> Result<Vec<HMONITOR>, SysError> {
     }
     let mut hmonitors = Vec::<HMONITOR>::new();
     EnumDisplayMonitors(
-        HDC::default(),
+        None,
         Some(ptr::null_mut()),
         Some(enum_monitors),
         LPARAM(&mut hmonitors as *mut _ as isize),
@@ -534,7 +534,7 @@ unsafe fn get_file_handle_for_display_device(
         Some(ptr::null_mut()),
         OPEN_EXISTING,
         Default::default(),
-        HANDLE::default(),
+        None,
     )
     .map(|h| Some(WrappedFileHandle(h)))
     .or_else(|e| {

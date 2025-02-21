@@ -13,7 +13,7 @@ serde = { version = "1.0.217", features = ["derive"] }
 
 [dependencies.windows]
 # this will be kept in sync with the version used in komorebi
-version = "0.58"
+version = "0.59"
 features = [
     "Win32_Foundation",
     "Win32_Devices_Display",
