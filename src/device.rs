@@ -25,7 +25,6 @@ use windows::Win32::Devices::Display::DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY;
 use windows::Win32::Devices::Display::PHYSICAL_MONITOR;
 use windows::Win32::Devices::Display::QDC_ONLY_ACTIVE_PATHS;
 use windows::Win32::Foundation::CloseHandle;
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::Foundation::HANDLE;
@@ -48,6 +47,7 @@ use windows::Win32::Storage::FileSystem::FILE_SHARE_READ;
 use windows::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
 use windows::Win32::Storage::FileSystem::OPEN_EXISTING;
 use windows::Win32::UI::WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME;
+use windows_core::BOOL;
 use wmi::COMLibrary;
 use wmi::WMIConnection;
 
