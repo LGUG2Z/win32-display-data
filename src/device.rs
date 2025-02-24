@@ -91,6 +91,11 @@ impl PhysicalDevice {
     }
 
     fn try_with_serial_number_id(&mut self) {
+        if self.device_path.trim().is_empty() {
+            self.serial_number_id = None;
+            return;
+        }
+
         let wmi_con = wmi_con();
         let query = format!(
             "SELECT * FROM WmiMonitorID WHERE InstanceName LIKE '{}%'",
@@ -148,6 +153,11 @@ impl Device {
     }
 
     fn try_with_serial_number_id(&mut self) {
+        if self.device_path.trim().is_empty() {
+            self.serial_number_id = None;
+            return;
+        }
+
         let wmi_con = wmi_con();
         let query = format!(
             "SELECT * FROM WmiMonitorID WHERE InstanceName LIKE '{}%'",
@@ -262,12 +272,8 @@ pub fn connected_displays_all() -> impl Iterator<Item = Result<Device, SysError>
                                 serial_number_id: None,
                             };
 
-                            if !device.device_path.trim().is_empty() {
-                                device.try_with_serial_number_id();
-                                Ok(device)
-                            } else {
-                                Err(SysError::DeviceInfoMissing)
-                            }
+                            device.try_with_serial_number_id();
+                            Ok(device)
                         })
                         .collect()
                 }),
@@ -335,12 +341,8 @@ pub fn connected_displays_physical() -> impl Iterator<Item = Result<PhysicalDevi
                             serial_number_id: None,
                         };
 
-                        if !device.device_path.trim().is_empty() {
-                            device.try_with_serial_number_id();
-                            Ok(device)
-                        } else {
-                            Err(SysError::DeviceInfoMissing)
-                        }
+                        device.try_with_serial_number_id();
+                        Ok(device)
                     },
                 )
                 .collect()
