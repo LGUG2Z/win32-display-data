@@ -14,7 +14,7 @@ windows-core = "0.60"
 
 [dependencies.windows]
 # this will be kept in sync with the version used in komorebi
-version = "0.60"
+version = "0.61"
 features = [
     "Win32_Foundation",
     "Win32_Devices_Display",
